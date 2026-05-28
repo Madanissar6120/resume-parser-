@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import re
 
 # -----------------------------
-# STREAMLIT PAGE CONFIG
+# PAGE CONFIG
 # -----------------------------
 st.set_page_config(
     page_title="AI Resume Analyzer",
@@ -20,7 +20,9 @@ st.set_page_config(
 # -----------------------------
 # GEMINI API CONFIG
 # -----------------------------
-genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+genai.configure(
+    api_key=st.secrets["GOOGLE_API_KEY"]
+)
 
 # -----------------------------
 # TITLE
@@ -46,19 +48,19 @@ def extract_text(file):
 
     try:
 
-        # PDF FILE
+        # PDF
         if file.type == "application/pdf":
 
             reader = PdfReader(file)
 
             for page in reader.pages:
 
-                extracted_text = page.extract_text()
+                page_text = page.extract_text()
 
-                if extracted_text:
-                    text += extracted_text + "\n"
+                if page_text:
+                    text += page_text + "\n"
 
-        # DOCX FILE
+        # DOCX
         elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
 
             doc = Document(file)
@@ -78,18 +80,19 @@ if uploaded_file is not None:
 
     st.success("✅ Resume Uploaded Successfully")
 
+    # Extract Text
     resume_text = extract_text(uploaded_file)
 
-    # DEBUG
+    # Debug
     st.write("📄 Extracted Text Length:", len(resume_text))
 
-    # EMPTY FILE CHECK
+    # Empty Check
     if len(resume_text) == 0:
         st.error("❌ Unable to extract text from this resume.")
         st.stop()
 
-    # LIMIT LARGE TEXT
-    resume_text = resume_text[:12000]
+    # Limit Text
+    resume_text = resume_text[:10000]
 
     # -----------------------------
     # AI ANALYSIS
@@ -98,7 +101,10 @@ if uploaded_file is not None:
 
         try:
 
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            # WORKING MODEL
+            model = genai.GenerativeModel(
+                model_name="models/gemini-pro"
+            )
 
             prompt = f"""
             Analyze this resume and provide:
@@ -117,17 +123,19 @@ if uploaded_file is not None:
             """
 
             response = model.generate_content(
-                contents=prompt
+                prompt
             )
 
             result_text = response.text
 
         except Exception as e:
+
             st.error(f"Gemini AI Error: {e}")
+
             st.stop()
 
     # -----------------------------
-    # SHOW RESULT
+    # DISPLAY RESULT
     # -----------------------------
     st.success("✅ Resume Analysis Completed")
 
@@ -145,7 +153,7 @@ if uploaded_file is not None:
 
     for line in result_text.split("\n"):
 
-        # FIND ROLE + SCORE
+        # Role + Score
         match = re.search(
             r"^(?P<role>.+?)[:\-]?\s*(?P<score>\d{1,3})%",
             line
@@ -154,11 +162,12 @@ if uploaded_file is not None:
         if match:
 
             role_name = match.group("role").strip()
+
             role_score = int(match.group("score"))
 
             roles.append((role_name, role_score))
 
-        # FIND MISSING SKILLS
+        # Missing Skills
         missing_match = re.search(
             r"Missing Skills[:\-]\s*(.*)",
             line,
@@ -192,10 +201,11 @@ if uploaded_file is not None:
                 )
 
     else:
+
         st.info("No role predictions detected.")
 
     # -----------------------------
-    # SKILL GAP VISUALIZATION
+    # SKILL GAP CHART
     # -----------------------------
     st.subheader("📊 Top Missing Skills")
 
@@ -228,10 +238,11 @@ if uploaded_file is not None:
         st.pyplot(fig)
 
     else:
-        st.info("No missing skills data available.")
+
+        st.info("No missing skills found.")
 
     # -----------------------------
-    # CSV DOWNLOAD
+    # DOWNLOAD CSV
     # -----------------------------
     if roles:
 
@@ -248,7 +259,9 @@ if uploaded_file is not None:
             ]
         })
 
-        csv = df.to_csv(index=False).encode("utf-8")
+        csv = df.to_csv(
+            index=False
+        ).encode("utf-8")
 
         st.download_button(
             label="📥 Download CSV Report",
@@ -258,4 +271,5 @@ if uploaded_file is not None:
         )
 
 else:
+
     st.info("👆 Upload Your Resume to Start AI Analysis")
