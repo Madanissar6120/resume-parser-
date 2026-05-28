@@ -9,28 +9,24 @@ import matplotlib.pyplot as plt
 import re
 
 # -----------------------------
-# STREAMLIT CONFIGURATION
+# STREAMLIT PAGE CONFIG
 # -----------------------------
 st.set_page_config(
-    page_title="Advanced AI Resume Analyzer",
+    page_title="AI Resume Analyzer",
     page_icon="🤖",
     layout="wide"
 )
 
 # -----------------------------
-# GEMINI API CONFIGURATION
+# GEMINI API CONFIG
 # -----------------------------
-# Streamlit Cloud -> Settings -> Secrets
-# Add:
-# GOOGLE_API_KEY="your_api_key"
-
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
 # -----------------------------
-# APP TITLE
+# TITLE
 # -----------------------------
-st.title("🤖 Advanced AI Resume Analyzer & Career Dashboard")
-st.caption("Developed by Madan Kumar Issar")
+st.title("🤖 Advanced AI Resume Analyzer")
+st.markdown("### Upload Resume & Get AI Career Insights")
 st.markdown("---")
 
 # -----------------------------
@@ -45,188 +41,221 @@ uploaded_file = st.file_uploader(
 # TEXT EXTRACTION FUNCTION
 # -----------------------------
 def extract_text(file):
+
     text = ""
 
-    if file.type == "application/pdf":
-        reader = PdfReader(file)
+    try:
 
-        for page in reader.pages:
-            extracted = page.extract_text()
-            if extracted:
-                text += extracted
+        # PDF FILE
+        if file.type == "application/pdf":
 
-    elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        doc = Document(file)
+            reader = PdfReader(file)
 
-        for para in doc.paragraphs:
-            text += para.text + "\n"
+            for page in reader.pages:
+
+                extracted_text = page.extract_text()
+
+                if extracted_text:
+                    text += extracted_text + "\n"
+
+        # DOCX FILE
+        elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+
+            doc = Document(file)
+
+            for para in doc.paragraphs:
+                text += para.text + "\n"
+
+    except Exception as e:
+        st.error(f"Text Extraction Error: {e}")
 
     return text.strip()
 
 # -----------------------------
-# MAIN ANALYSIS
+# MAIN APP
 # -----------------------------
-if uploaded_file:
+if uploaded_file is not None:
 
-    st.success("✅ Resume Uploaded Successfully!")
+    st.success("✅ Resume Uploaded Successfully")
 
     resume_text = extract_text(uploaded_file)
 
-    if resume_text:
+    # DEBUG
+    st.write("📄 Extracted Text Length:", len(resume_text))
 
-        with st.spinner("⏳ Analyzing Resume with Gemini AI..."):
+    # EMPTY FILE CHECK
+    if len(resume_text) == 0:
+        st.error("❌ Unable to extract text from this resume.")
+        st.stop()
+
+    # LIMIT LARGE TEXT
+    resume_text = resume_text[:12000]
+
+    # -----------------------------
+    # AI ANALYSIS
+    # -----------------------------
+    with st.spinner("⏳ Analyzing Resume with Gemini AI..."):
+
+        try:
 
             model = genai.GenerativeModel("gemini-1.5-flash")
 
             prompt = f"""
-            You are an expert AI Resume Analyzer.
-
-            Analyze the following resume and provide:
+            Analyze this resume and provide:
 
             1. Candidate Overview
             2. Education
             3. Experience
             4. Technical Skills
             5. Soft Skills
-            6. Recommended Job Roles with Fit Score %
+            6. Recommended Job Roles with Fit Percentage
             7. Missing Skills
             8. Resume Improvement Suggestions
 
-            Resume:
+            Resume Content:
             {resume_text}
             """
 
-            response = model.generate_content(prompt)
+            response = model.generate_content(
+                contents=prompt
+            )
 
             result_text = response.text
 
-        st.success("✅ Resume Analysis Completed!")
+        except Exception as e:
+            st.error(f"Gemini AI Error: {e}")
+            st.stop()
 
-        # -----------------------------
-        # DISPLAY RESULT
-        # -----------------------------
-        st.subheader("📄 Resume Analysis Report")
+    # -----------------------------
+    # SHOW RESULT
+    # -----------------------------
+    st.success("✅ Resume Analysis Completed")
 
-        st.markdown(result_text)
+    st.subheader("📄 AI Resume Report")
 
-        # -----------------------------
-        # EXTRACT ROLE + SCORE
-        # -----------------------------
-        st.subheader("🎯 Recommended Roles")
+    st.markdown(result_text)
 
-        roles = []
-        missing_skills_dict = {}
+    # -----------------------------
+    # ROLE EXTRACTION
+    # -----------------------------
+    st.subheader("🎯 Recommended Roles")
 
-        for line in result_text.split("\n"):
+    roles = []
+    missing_skills_dict = {}
 
-            match = re.search(
-                r"^(?P<role>.+?)[:\-]?\s*(?P<score>\d{1,3})%",
-                line
-            )
+    for line in result_text.split("\n"):
 
-            if match:
-                role_name = match.group("role").strip()
-                role_score = int(match.group("score"))
+        # FIND ROLE + SCORE
+        match = re.search(
+            r"^(?P<role>.+?)[:\-]?\s*(?P<score>\d{1,3})%",
+            line
+        )
 
-                roles.append((role_name, role_score))
+        if match:
 
-            missing_match = re.search(
-                r"Missing Skills[:\-]\s*(.*)",
-                line,
-                re.IGNORECASE
-            )
+            role_name = match.group("role").strip()
+            role_score = int(match.group("score"))
 
-            if missing_match and roles:
-                missing_skills_dict[roles[-1][0]] = [
-                    s.strip()
-                    for s in missing_match.group(1).split(",")
-                ]
+            roles.append((role_name, role_score))
 
-        # -----------------------------
-        # ROLE DISPLAY
-        # -----------------------------
-        if roles:
+        # FIND MISSING SKILLS
+        missing_match = re.search(
+            r"Missing Skills[:\-]\s*(.*)",
+            line,
+            re.IGNORECASE
+        )
 
-            for role, score in roles:
+        if missing_match and roles:
 
-                st.markdown(f"### {role}")
-                st.progress(score / 100)
+            missing_skills_dict[roles[-1][0]] = [
+                s.strip()
+                for s in missing_match.group(1).split(",")
+            ]
 
-                st.write(f"Fit Score: {score}%")
+    # -----------------------------
+    # DISPLAY ROLE CARDS
+    # -----------------------------
+    if roles:
 
-                if role in missing_skills_dict:
-                    st.warning(
-                        f"Missing Skills: {', '.join(missing_skills_dict[role])}"
-                    )
+        for role, score in roles:
 
-        else:
-            st.info("No role predictions found.")
+            st.markdown(f"### 💼 {role}")
 
-        # -----------------------------
-        # SKILL GAP VISUALIZATION
-        # -----------------------------
-        st.subheader("📊 Top Missing Skills")
+            st.progress(score / 100)
 
-        all_missing_skills = []
+            st.write(f"Fit Score: {score}%")
 
-        for skills in missing_skills_dict.values():
+            if role in missing_skills_dict:
 
-            if isinstance(skills, list):
-                all_missing_skills.extend(skills)
-
-        if all_missing_skills:
-
-            skill_counts = (
-                pd.Series(all_missing_skills)
-                .value_counts()
-                .head(10)
-            )
-
-            fig, ax = plt.subplots(figsize=(8, 5))
-
-            skill_counts.sort_values().plot(
-                kind="barh",
-                ax=ax
-            )
-
-            ax.set_xlabel("Count")
-            ax.set_ylabel("Skills")
-            ax.set_title("Top Missing Skills")
-
-            st.pyplot(fig)
-
-        else:
-            st.info("No missing skills found.")
-
-        # -----------------------------
-        # DOWNLOAD CSV
-        # -----------------------------
-        if roles:
-
-            st.subheader("💾 Download Analysis")
-
-            df = pd.DataFrame({
-                "Role": [r[0] for r in roles],
-                "Fit Score": [r[1] for r in roles],
-                "Missing Skills": [
-                    ", ".join(
-                        missing_skills_dict.get(r[0], [])
-                    )
-                    for r in roles
-                ]
-            })
-
-            csv = df.to_csv(index=False).encode("utf-8")
-
-            st.download_button(
-                label="📥 Download CSV Report",
-                data=csv,
-                file_name="resume_analysis.csv",
-                mime="text/csv"
-            )
+                st.warning(
+                    f"Missing Skills: {', '.join(missing_skills_dict[role])}"
+                )
 
     else:
-        st.error("Unable to extract text from resume.")
+        st.info("No role predictions detected.")
+
+    # -----------------------------
+    # SKILL GAP VISUALIZATION
+    # -----------------------------
+    st.subheader("📊 Top Missing Skills")
+
+    all_missing_skills = []
+
+    for skills in missing_skills_dict.values():
+
+        if isinstance(skills, list):
+            all_missing_skills.extend(skills)
+
+    if len(all_missing_skills) > 0:
+
+        skill_counts = (
+            pd.Series(all_missing_skills)
+            .value_counts()
+            .head(10)
+        )
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+
+        skill_counts.sort_values().plot(
+            kind="barh",
+            ax=ax
+        )
+
+        ax.set_xlabel("Count")
+        ax.set_ylabel("Skills")
+        ax.set_title("Top Missing Skills")
+
+        st.pyplot(fig)
+
+    else:
+        st.info("No missing skills data available.")
+
+    # -----------------------------
+    # CSV DOWNLOAD
+    # -----------------------------
+    if roles:
+
+        st.subheader("💾 Download Analysis")
+
+        df = pd.DataFrame({
+            "Role": [r[0] for r in roles],
+            "Fit Score": [r[1] for r in roles],
+            "Missing Skills": [
+                ", ".join(
+                    missing_skills_dict.get(r[0], [])
+                )
+                for r in roles
+            ]
+        })
+
+        csv = df.to_csv(index=False).encode("utf-8")
+
+        st.download_button(
+            label="📥 Download CSV Report",
+            data=csv,
+            file_name="resume_analysis.csv",
+            mime="text/csv"
+        )
 
 else:
-    st.info("👆 Upload a Resume to Start Analysis")
+    st.info("👆 Upload Your Resume to Start AI Analysis")
