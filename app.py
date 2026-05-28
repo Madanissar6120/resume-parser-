@@ -1,7 +1,5 @@
-# app.py
-
 import streamlit as st
-import google.generativeai as genai
+from groq import Groq
 from PyPDF2 import PdfReader
 from docx import Document
 import pandas as pd
@@ -18,10 +16,10 @@ st.set_page_config(
 )
 
 # -----------------------------
-# GEMINI API CONFIG
+# GROQ CLIENT
 # -----------------------------
-genai.configure(
-    api_key=st.secrets["GOOGLE_API_KEY"]
+client = Groq(
+    api_key=st.secrets["GROQ_API_KEY"]
 )
 
 # -----------------------------
@@ -40,7 +38,7 @@ uploaded_file = st.file_uploader(
 )
 
 # -----------------------------
-# TEXT EXTRACTION FUNCTION
+# TEXT EXTRACTION
 # -----------------------------
 def extract_text(file):
 
@@ -48,7 +46,6 @@ def extract_text(file):
 
     try:
 
-        # PDF
         if file.type == "application/pdf":
 
             reader = PdfReader(file)
@@ -60,7 +57,6 @@ def extract_text(file):
                 if page_text:
                     text += page_text + "\n"
 
-        # DOCX
         elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
 
             doc = Document(file)
@@ -80,31 +76,17 @@ if uploaded_file is not None:
 
     st.success("✅ Resume Uploaded Successfully")
 
-    # Extract Text
     resume_text = extract_text(uploaded_file)
 
-    # Debug
-    st.write("📄 Extracted Text Length:", len(resume_text))
-
-    # Empty Check
     if len(resume_text) == 0:
-        st.error("❌ Unable to extract text from this resume.")
+        st.error("❌ Unable to extract text from resume.")
         st.stop()
 
-    # Limit Text
     resume_text = resume_text[:10000]
 
-    # -----------------------------
-    # AI ANALYSIS
-    # -----------------------------
-    with st.spinner("⏳ Analyzing Resume with Gemini AI..."):
+    with st.spinner("⏳ Analyzing Resume with AI..."):
 
         try:
-
-            # WORKING MODEL
-            model = genai.GenerativeModel(
-                model_name="models/gemini-pro"
-            )
 
             prompt = f"""
             Analyze this resume and provide:
@@ -118,25 +100,30 @@ if uploaded_file is not None:
             7. Missing Skills
             8. Resume Improvement Suggestions
 
-            Resume Content:
+            Resume:
             {resume_text}
             """
 
-            response = model.generate_content(
-                prompt
+            completion = client.chat.completions.create(
+                model="llama3-8b-8192",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.5,
+                max_tokens=2048
             )
 
-            result_text = response.text
+            result_text = completion.choices[0].message.content
 
         except Exception as e:
 
-            st.error(f"Gemini AI Error: {e}")
+            st.error(f"AI Error: {e}")
 
             st.stop()
 
-    # -----------------------------
-    # DISPLAY RESULT
-    # -----------------------------
     st.success("✅ Resume Analysis Completed")
 
     st.subheader("📄 AI Resume Report")
@@ -153,7 +140,6 @@ if uploaded_file is not None:
 
     for line in result_text.split("\n"):
 
-        # Role + Score
         match = re.search(
             r"^(?P<role>.+?)[:\-]?\s*(?P<score>\d{1,3})%",
             line
@@ -167,7 +153,6 @@ if uploaded_file is not None:
 
             roles.append((role_name, role_score))
 
-        # Missing Skills
         missing_match = re.search(
             r"Missing Skills[:\-]\s*(.*)",
             line,
@@ -182,7 +167,7 @@ if uploaded_file is not None:
             ]
 
     # -----------------------------
-    # DISPLAY ROLE CARDS
+    # DISPLAY ROLES
     # -----------------------------
     if roles:
 
@@ -242,7 +227,7 @@ if uploaded_file is not None:
         st.info("No missing skills found.")
 
     # -----------------------------
-    # DOWNLOAD CSV
+    # CSV DOWNLOAD
     # -----------------------------
     if roles:
 
