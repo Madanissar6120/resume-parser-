@@ -98,7 +98,7 @@ if uploaded_file is not None:
 
         try:
 
-            model = genai.GenerativeModel("gemini-pro")
+            model = genai.GenerativeModel("gemini-1.5-flash")
 
             prompt = f"""
             Analyze this resume and provide:
